@@ -3,7 +3,9 @@ from soni_translate.logging_setup import (
     logger,
     set_logging_level,
     configure_logging_libs,
-); configure_logging_libs() # noqa
+)
+
+configure_logging_libs()  # noqa
 import whisperx
 import torch
 import os
@@ -15,11 +17,12 @@ from soni_translate.text_to_speech import (
     piper_tts_voices_list,
     create_wav_file_vc,
     accelerate_segments,
+    xilabs_tts_voices_list,
 )
 from soni_translate.translate_segments import (
     translate_text,
     TRANSLATION_PROCESS_OPTIONS,
-    DOCS_TRANSLATION_PROCESS_OPTIONS
+    DOCS_TRANSLATION_PROCESS_OPTIONS,
 )
 from soni_translate.preprocessor import (
     audio_video_preprocessor,
@@ -40,6 +43,7 @@ from soni_translate.language_configuration import (
     BARK_VOICES_LIST,
     VITS_VOICES_LIST,
     OPENAI_TTS_MODELS,
+    XILABS_VOICES_LIST,
 )
 from soni_translate.utils import (
     remove_files,
@@ -107,11 +111,7 @@ directories = [
     "audio",
     "outputs",
 ]
-[
-    os.makedirs(directory)
-    for directory in directories
-    if not os.path.exists(directory)
-]
+[os.makedirs(directory) for directory in directories if not os.path.exists(directory)]
 
 
 class TTS_Info:
@@ -121,21 +121,19 @@ class TTS_Info:
         self.list_vits = list(VITS_VOICES_LIST.keys())
         self.list_openai_tts = OPENAI_TTS_MODELS
         self.piper_enabled = piper_enabled
-        self.list_vits_onnx = (
-            piper_tts_voices_list() if self.piper_enabled else []
-        )
+        self.list_vits_onnx = piper_tts_voices_list() if self.piper_enabled else []
         self.xtts_enabled = xtts_enabled
+        self.list_xilabs = list(XILABS_VOICES_LIST.keys())
 
     def tts_list(self):
-        self.list_coqui_xtts = (
-            coqui_xtts_voices_list() if self.xtts_enabled else []
-        )
+        self.list_coqui_xtts = coqui_xtts_voices_list() if self.xtts_enabled else []
         list_tts = self.list_coqui_xtts + sorted(
             self.list_edge
             + self.list_bark
             + self.list_vits
             + self.list_openai_tts
             + self.list_vits_onnx
+            + self.list_xilabs
         )
         return list_tts
 
@@ -155,31 +153,31 @@ def warn_disp(wrn_lang, is_gui):
 class SoniTrCache:
     def __init__(self):
         self.cache = {
-            'media': [[]],
-            'refine_vocals': [],
-            'transcript_align': [],
-            'break_align': [],
-            'diarize': [],
-            'translate': [],
-            'subs_and_edit': [],
-            'tts': [],
-            'acc_and_vc': [],
-            'mix_aud': [],
-            'output': []
+            "media": [[]],
+            "refine_vocals": [],
+            "transcript_align": [],
+            "break_align": [],
+            "diarize": [],
+            "translate": [],
+            "subs_and_edit": [],
+            "tts": [],
+            "acc_and_vc": [],
+            "mix_aud": [],
+            "output": [],
         }
 
         self.cache_data = {
-            'media': [],
-            'refine_vocals': [],
-            'transcript_align': [],
-            'break_align': [],
-            'diarize': [],
-            'translate': [],
-            'subs_and_edit': [],
-            'tts': [],
-            'acc_and_vc': [],
-            'mix_aud': [],
-            'output': []
+            "media": [],
+            "refine_vocals": [],
+            "transcript_align": [],
+            "break_align": [],
+            "diarize": [],
+            "translate": [],
+            "subs_and_edit": [],
+            "tts": [],
+            "acc_and_vc": [],
+            "mix_aud": [],
+            "output": [],
         }
 
         self.cache_keys = list(self.cache.keys())
@@ -214,9 +212,7 @@ class SoniTrCache:
             # Recovery from cache_data the current step
             for key, value in self.cache_data[step].items():
                 self.set_variable(key, copy.deepcopy(value))
-                logger.debug(
-                    f"Chache load: {str(key)}"
-                )
+                logger.debug(f"Chache load: {str(key)}")
 
             self.pre_step = step
             return True
@@ -236,9 +232,7 @@ class SoniTrCache:
 
     def clear_cache(self, media, force=False):
 
-        self.cache["media"] = (
-            self.cache["media"] if len(self.cache["media"]) else [[]]
-        )
+        self.cache["media"] = self.cache["media"] if len(self.cache["media"]) else [[]]
 
         if media != self.cache["media"][0] or force:
 
@@ -250,7 +244,7 @@ class SoniTrCache:
 
 
 def get_hash(filepath):
-    with open(filepath, 'rb') as f:
+    with open(filepath, "rb") as f:
         file_hash = hashlib.blake2b()
         while chunk := f.read(8192):
             file_hash.update(chunk)
@@ -274,9 +268,7 @@ class SoniTranslate(SoniTrCache):
         if cpu_mode:
             os.environ["SONITR_DEVICE"] = "cpu"
         else:
-            os.environ["SONITR_DEVICE"] = (
-                "cuda" if torch.cuda.is_available() else "cpu"
-            )
+            os.environ["SONITR_DEVICE"] = "cuda" if torch.cuda.is_available() else "cpu"
 
         self.device = os.environ.get("SONITR_DEVICE")
         self.result_diarize = None
@@ -325,16 +317,16 @@ class SoniTranslate(SoniTrCache):
         return self.tts_info.tts_list()
 
     def batch_multilingual_media_conversion(self, *kwargs):
-        # logger.debug(str(kwargs))
+        logger.debug(str(kwargs))
 
         media_file_arg = kwargs[0] if kwargs[0] is not None else []
 
         link_media_arg = kwargs[1]
-        link_media_arg = [x.strip() for x in link_media_arg.split(',')]
+        link_media_arg = [x.strip() for x in link_media_arg.split(",")]
         link_media_arg = get_link_list(link_media_arg)
 
         path_arg = kwargs[2]
-        path_arg = [x.strip() for x in path_arg.split(',')]
+        path_arg = [x.strip() for x in path_arg.split(",")]
         path_arg = get_valid_files(path_arg)
 
         edit_text_arg = kwargs[31]
@@ -352,9 +344,7 @@ class SoniTranslate(SoniTrCache):
         remove_directory_contents("outputs")
 
         if edit_text_arg or get_text_arg:
-            return self.multilingual_media_conversion(
-                media_batch[0], "", "", *kwargs
-            )
+            return self.multilingual_media_conversion(media_batch[0], "", "", *kwargs)
 
         if "SET_LIMIT" == os.getenv("DEMO"):
             media_batch = [media_batch[0]]
@@ -362,9 +352,7 @@ class SoniTranslate(SoniTrCache):
         result = []
         for media in media_batch:
             # Call the nested function with the parameters
-            output_file = self.multilingual_media_conversion(
-                media, "", "", *kwargs
-            )
+            output_file = self.multilingual_media_conversion(media, "", "", *kwargs)
 
             if isinstance(output_file, str):
                 output_file = [output_file]
@@ -456,13 +444,9 @@ class SoniTranslate(SoniTrCache):
 
         if media_file is None:
             media_file = (
-                directory_input
-                if os.path.exists(directory_input)
-                else link_media
+                directory_input if os.path.exists(directory_input) else link_media
             )
-        media_file = (
-            media_file if isinstance(media_file, str) else media_file.name
-        )
+        media_file = media_file if isinstance(media_file, str) else media_file.name
 
         if is_subtitle_file(media_file):
             subtitle_file = media_file
@@ -486,9 +470,8 @@ class SoniTranslate(SoniTrCache):
             if not self.edit_subs_complete:
                 raise ValueError("Generate the transcription first.")
 
-        if (
-            ("sound" in output_type or output_type == "raw media")
-            and (get_translated_text or get_video_from_text_json)
+        if ("sound" in output_type or output_type == "raw media") and (
+            get_translated_text or get_video_from_text_json
         ):
             raise ValueError(
                 "Please disable 'edit generate subtitles' "
@@ -498,13 +481,8 @@ class SoniTranslate(SoniTrCache):
         TRANSLATE_AUDIO_TO = LANGUAGES[target_language]
         SOURCE_LANGUAGE = LANGUAGES[origin_language]
 
-        if (
-            transcriber_model == "OpenAI_API_Whisper"
-            and SOURCE_LANGUAGE == "zh-TW"
-        ):
-            logger.warning(
-                "OpenAI API Whisper only supports Chinese (Simplified)."
-            )
+        if transcriber_model == "OpenAI_API_Whisper" and SOURCE_LANGUAGE == "zh-TW":
+            logger.warning("OpenAI API Whisper only supports Chinese (Simplified).")
             SOURCE_LANGUAGE = "zh"
 
         if (
@@ -516,7 +494,6 @@ class SoniTranslate(SoniTrCache):
                 " used for generating subtitles. If subtitles are not the"
                 " intended output, consider selecting 'sentence' "
                 "segmentation method to ensure optimal results."
-
             )
             warn_disp(wrn_lang, is_gui)
 
@@ -529,8 +506,7 @@ class SoniTranslate(SoniTrCache):
 
         if "_XTTS_" in tts_voice00 and voice_imitation:
             wrn_lang = (
-                "When you select XTTS, it is advisable "
-                "to disable Voice Imitation."
+                "When you select XTTS, it is advisable " "to disable Voice Imitation."
             )
             warn_disp(wrn_lang, is_gui)
 
@@ -542,15 +518,11 @@ class SoniTranslate(SoniTrCache):
             warn_disp(wrn_lang, is_gui)
 
         if not media_file and not subtitle_file:
-            raise ValueError(
-                "Specifify a media or SRT file in advanced settings"
-            )
+            raise ValueError("Specifify a media or SRT file in advanced settings")
 
         if subtitle_file:
             subtitle_file = (
-                subtitle_file
-                if isinstance(subtitle_file, str)
-                else subtitle_file.name
+                subtitle_file if isinstance(subtitle_file, str) else subtitle_file.name
             )
 
         if subtitle_file and SOURCE_LANGUAGE == "Automatic detection":
@@ -565,13 +537,9 @@ class SoniTranslate(SoniTrCache):
             if not get_video_from_text_json:
                 remove_files(media_file)
                 srt_data = srt_file_to_segments(subtitle_file)
-                total_duration = srt_data["segments"][-1]["end"] + 30.
-                support_audio = AudioSegment.silent(
-                    duration=int(total_duration * 1000)
-                )
-                support_audio.export(
-                    media_file, format="wav"
-                )
+                total_duration = srt_data["segments"][-1]["end"] + 30.0
+                support_audio = AudioSegment.silent(duration=int(total_duration * 1000))
+                support_audio.export(media_file, format="wav")
                 logger.info("Supporting audio for the SRT file, created.")
 
         if "SET_LIMIT" == os.getenv("DEMO"):
@@ -606,19 +574,13 @@ class SoniTranslate(SoniTrCache):
         self.clear_cache(media_base_hash, force=(not enable_cache))
 
         if not get_video_from_text_json:
-            self.result_diarize = (
-                self.align_language
-            ) = self.result_source_lang = None
+            self.result_diarize = self.align_language = self.result_source_lang = None
             if not self.task_in_cache("media", [media_base_hash, preview], {}):
                 if is_audio_file(media_file):
-                    prog_disp(
-                        "Processing audio...", 0.15, is_gui, progress=progress
-                    )
+                    prog_disp("Processing audio...", 0.15, is_gui, progress=progress)
                     audio_preprocessor(preview, media_file, base_audio_wav)
                 else:
-                    prog_disp(
-                        "Processing video...", 0.15, is_gui, progress=progress
-                    )
+                    prog_disp("Processing video...", 0.15, is_gui, progress=progress)
                     audio_video_preprocessor(
                         preview, media_file, base_video_file, base_audio_wav
                     )
@@ -626,10 +588,7 @@ class SoniTranslate(SoniTrCache):
 
             if "sound" in output_type:
                 prog_disp(
-                    "Separating sounds in the file...",
-                    0.50,
-                    is_gui,
-                    progress=progress
+                    "Separating sounds in the file...", 0.50, is_gui, progress=progress
                 )
                 separate_out = sound_separate(base_audio_wav, output_type)
                 final_outputs = []
@@ -651,7 +610,9 @@ class SoniTranslate(SoniTrCache):
                     "raw_media",
                     video_output_name,
                     "wav" if is_audio_file(media_file) else "mp4",
-                    file_obj=base_audio_wav if is_audio_file(media_file) else base_video_file,
+                    file_obj=(
+                        base_audio_wav if is_audio_file(media_file) else base_video_file
+                    ),
                 )
                 logger.info(f"Done: {output}")
                 return output
@@ -661,6 +622,7 @@ class SoniTranslate(SoniTrCache):
                 if vocal_refinement:
                     try:
                         from soni_translate.mdx_net import process_uvr_task
+
                         _, _, _, _, file_vocals = process_uvr_task(
                             orig_song_path=base_audio_wav,
                             main_vocals=False,
@@ -673,34 +635,34 @@ class SoniTranslate(SoniTrCache):
                     except Exception as error:
                         logger.error(str(error))
 
-            if not self.task_in_cache("transcript_align", [
-                subtitle_file,
-                SOURCE_LANGUAGE,
-                transcriber_model,
-                compute_type,
-                batch_size,
-                literalize_numbers,
-                segment_duration_limit,
-                (
-                    "l_unit"
-                    if text_segmentation_scale in ["word", "character"]
-                    and subtitle_file
-                    else "sentence"
-                )
-            ], {"vocals": self.vocals}):
+            if not self.task_in_cache(
+                "transcript_align",
+                [
+                    subtitle_file,
+                    SOURCE_LANGUAGE,
+                    transcriber_model,
+                    compute_type,
+                    batch_size,
+                    literalize_numbers,
+                    segment_duration_limit,
+                    (
+                        "l_unit"
+                        if text_segmentation_scale in ["word", "character"]
+                        and subtitle_file
+                        else "sentence"
+                    ),
+                ],
+                {"vocals": self.vocals},
+            ):
                 if subtitle_file:
-                    prog_disp(
-                        "From SRT file...", 0.30, is_gui, progress=progress
-                    )
+                    prog_disp("From SRT file...", 0.30, is_gui, progress=progress)
                     audio = whisperx.load_audio(
                         base_audio_wav if not self.vocals else self.vocals
                     )
                     self.result = srt_file_to_segments(subtitle_file)
                     self.result["language"] = SOURCE_LANGUAGE
                 else:
-                    prog_disp(
-                        "Transcribing...", 0.30, is_gui, progress=progress
-                    )
+                    prog_disp("Transcribing...", 0.30, is_gui, progress=progress)
                     SOURCE_LANGUAGE = (
                         None
                         if SOURCE_LANGUAGE == "Automatic detection"
@@ -716,16 +678,17 @@ class SoniTranslate(SoniTrCache):
                         segment_duration_limit,
                         custom_vocab=transcription_vocabulary,
                     )
+                logger.debug(self.result)
                 logger.debug(
                     "Transcript complete, "
                     f"segments count {len(self.result['segments'])}"
                 )
 
                 self.align_language = self.result["language"]
-                if (
-                    not subtitle_file
-                    or text_segmentation_scale in ["word", "character"]
-                ):
+                if not subtitle_file or text_segmentation_scale in [
+                    "word",
+                    "character",
+                ]:
                     prog_disp("Aligning...", 0.45, is_gui, progress=progress)
                     try:
                         if self.align_language in ["vi"]:
@@ -747,14 +710,11 @@ class SoniTranslate(SoniTrCache):
             if self.result["segments"] == []:
                 raise ValueError("No active speech found in audio")
 
-            if not self.task_in_cache("break_align", [
-                divide_text_segments_by,
-                text_segmentation_scale,
-                self.align_language
-            ], {
-                "result": self.result,
-                "align_language": self.align_language
-            }):
+            if not self.task_in_cache(
+                "break_align",
+                [divide_text_segments_by, text_segmentation_scale, self.align_language],
+                {"result": self.result, "align_language": self.align_language},
+            ):
                 if self.align_language in ["ja", "zh", "zh-TW"]:
                     divide_text_segments_by += "|!|?|...|。"
                 if text_segmentation_scale in ["word", "character"]:
@@ -771,14 +731,16 @@ class SoniTranslate(SoniTrCache):
                     except Exception as error:
                         logger.error(str(error))
 
-            if not self.task_in_cache("diarize", [
-                min_speakers,
-                max_speakers,
-                YOUR_HF_TOKEN[:len(YOUR_HF_TOKEN)//2],
-                diarization_model
-            ], {
-                "result": self.result
-            }):
+            if not self.task_in_cache(
+                "diarize",
+                [
+                    min_speakers,
+                    max_speakers,
+                    YOUR_HF_TOKEN[: len(YOUR_HF_TOKEN) // 2],
+                    diarization_model,
+                ],
+                {"result": self.result},
+            ):
                 prog_disp("Diarizing...", 0.60, is_gui, progress=progress)
                 diarize_model_select = diarization_models[diarization_model]
                 self.result_diarize = diarize_speech(
@@ -792,17 +754,14 @@ class SoniTranslate(SoniTrCache):
                 logger.debug("Diarize complete")
             self.result_source_lang = copy.deepcopy(self.result_diarize)
 
-            if not self.task_in_cache("translate", [
-                TRANSLATE_AUDIO_TO,
-                translate_process
-            ], {
-                "result_diarize": self.result_diarize
-            }):
+            if not self.task_in_cache(
+                "translate",
+                [TRANSLATE_AUDIO_TO, translate_process],
+                {"result_diarize": self.result_diarize},
+            ):
                 prog_disp("Translating...", 0.70, is_gui, progress=progress)
                 lang_source = (
-                    self.align_language
-                    if self.align_language
-                    else SOURCE_LANGUAGE
+                    self.align_language if self.align_language else SOURCE_LANGUAGE
                 )
                 self.result_diarize["segments"] = translate_text(
                     self.result_diarize["segments"],
@@ -812,7 +771,7 @@ class SoniTranslate(SoniTrCache):
                     source=lang_source,
                 )
                 logger.debug("Translation complete")
-                logger.debug(self.result_diarize)
+                # logger.debug(self.result_diarize)
 
         if get_translated_text:
 
@@ -821,9 +780,7 @@ class SoniTranslate(SoniTrCache):
                 start = segment["start"]
                 text = segment["text"]
                 speaker = int(segment.get("speaker", "SPEAKER_00")[-2:]) + 1
-                json_data.append(
-                    {"start": start, "text": text, "speaker": speaker}
-                )
+                json_data.append({"start": start, "text": text, "speaker": speaker})
 
             # Convert list of dictionaries to a JSON string with indentation
             json_string = json.dumps(json_data, indent=2)
@@ -844,13 +801,15 @@ class SoniTranslate(SoniTrCache):
                 )
 
         # Write subtitle
-        if not self.task_in_cache("subs_and_edit", [
-            copy.deepcopy(self.result_diarize),
-            output_format_subtitle,
-            TRANSLATE_AUDIO_TO
-        ], {
-            "result_diarize": self.result_diarize
-        }):
+        if not self.task_in_cache(
+            "subs_and_edit",
+            [
+                copy.deepcopy(self.result_diarize),
+                output_format_subtitle,
+                TRANSLATE_AUDIO_TO,
+            ],
+            {"result_diarize": self.result_diarize},
+        ):
             if output_format_subtitle == "disable":
                 self.sub_file = "sub_tra.srt"
             elif output_format_subtitle != "ass":
@@ -880,9 +839,7 @@ class SoniTranslate(SoniTrCache):
                 run_command(convert_tra)
 
         format_sub = (
-            output_format_subtitle
-            if output_format_subtitle != "disable"
-            else "srt"
+            output_format_subtitle if output_format_subtitle != "disable" else "srt"
         )
 
         if output_type == "subtitle":
@@ -924,10 +881,14 @@ class SoniTranslate(SoniTrCache):
                 media_file,
                 TRANSLATE_AUDIO_TO + "_subtitled",
                 video_output_name,
-                "wav" if is_audio_file(media_file) else (
-                    "mkv" if "mkv" in output_type else "mp4"
+                (
+                    "wav"
+                    if is_audio_file(media_file)
+                    else ("mkv" if "mkv" in output_type else "mp4")
                 ),
-                file_obj=base_audio_wav if is_audio_file(media_file) else base_video_file,
+                file_obj=(
+                    base_audio_wav if is_audio_file(media_file) else base_video_file
+                ),
                 soft_subtitles=False if is_audio_file(media_file) else True,
                 subtitle_files=output_format_subtitle,
             )
@@ -935,24 +896,26 @@ class SoniTranslate(SoniTrCache):
             logger.info(f"Done: {msg_out}")
             return output
 
-        if not self.task_in_cache("tts", [
-            TRANSLATE_AUDIO_TO,
-            tts_voice00,
-            tts_voice01,
-            tts_voice02,
-            tts_voice03,
-            tts_voice04,
-            tts_voice05,
-            tts_voice06,
-            tts_voice07,
-            tts_voice08,
-            tts_voice09,
-            tts_voice10,
-            tts_voice11,
-            dereverb_automatic_xtts
-        ], {
-            "sub_file": self.sub_file
-        }):
+        if not self.task_in_cache(
+            "tts",
+            [
+                TRANSLATE_AUDIO_TO,
+                tts_voice00,
+                tts_voice01,
+                tts_voice02,
+                tts_voice03,
+                tts_voice04,
+                tts_voice05,
+                tts_voice06,
+                tts_voice07,
+                tts_voice08,
+                tts_voice09,
+                tts_voice10,
+                tts_voice11,
+                dereverb_automatic_xtts,
+            ],
+            {"sub_file": self.sub_file},
+        ):
             prog_disp("Text to speech...", 0.80, is_gui, progress=progress)
             self.valid_speakers = audio_segmentation_to_voice(
                 self.result_diarize,
@@ -973,33 +936,33 @@ class SoniTranslate(SoniTrCache):
                 dereverb_automatic_xtts,
             )
 
-        if not self.task_in_cache("acc_and_vc", [
-            max_accelerate_audio,
-            acceleration_rate_regulation,
-            voice_imitation,
-            voice_imitation_max_segments,
-            voice_imitation_remove_previous,
-            voice_imitation_vocals_dereverb,
-            voice_imitation_method,
-            custom_voices,
-            custom_voices_workers,
-            copy.deepcopy(self.vci.model_config),
-            avoid_overlap
-        ], {
-            "valid_speakers": self.valid_speakers
-        }):
+        if not self.task_in_cache(
+            "acc_and_vc",
+            [
+                max_accelerate_audio,
+                acceleration_rate_regulation,
+                voice_imitation,
+                voice_imitation_max_segments,
+                voice_imitation_remove_previous,
+                voice_imitation_vocals_dereverb,
+                voice_imitation_method,
+                custom_voices,
+                custom_voices_workers,
+                copy.deepcopy(self.vci.model_config),
+                avoid_overlap,
+            ],
+            {"valid_speakers": self.valid_speakers},
+        ):
             audio_files, speakers_list = accelerate_segments(
-                    self.result_diarize,
-                    max_accelerate_audio,
-                    self.valid_speakers,
-                    acceleration_rate_regulation,
-                )
+                self.result_diarize,
+                max_accelerate_audio,
+                self.valid_speakers,
+                acceleration_rate_regulation,
+            )
 
             # Voice Imitation (Tone color converter)
             if voice_imitation:
-                prog_disp(
-                    "Voice Imitation...", 0.85, is_gui, progress=progress
-                )
+                prog_disp("Voice Imitation...", 0.85, is_gui, progress=progress)
                 from soni_translate.text_to_speech import toneconverter
 
                 try:
@@ -1072,12 +1035,16 @@ class SoniTranslate(SoniTrCache):
             else:
                 base_audio_wav = voiceless_audio_file
 
-        if not self.task_in_cache("mix_aud", [
-            mix_method_audio,
-            volume_original_audio,
-            volume_translated_audio,
-            voiceless_track
-        ], {}):
+        if not self.task_in_cache(
+            "mix_aud",
+            [
+                mix_method_audio,
+                volume_original_audio,
+                volume_translated_audio,
+                voiceless_track,
+            ],
+            {},
+        ):
             # TYPE MIX AUDIO
             remove_files(mix_audio_file)
             command_volume_mix = f'ffmpeg -y -i {base_audio_wav} -i {dub_audio_file} -filter_complex "[0:0]volume={volume_original_audio}[a];[1:0]volume={volume_translated_audio}[b];[a][b]amix=inputs=2:duration=longest" -c:a libmp3lame {mix_audio_file}'
@@ -1099,8 +1066,10 @@ class SoniTranslate(SoniTrCache):
                 media_file,
                 TRANSLATE_AUDIO_TO,
                 video_output_name,
-                "wav" if "wav" in output_type else (
-                    "ogg" if "ogg" in output_type else "mp3"
+                (
+                    "wav"
+                    if "wav" in output_type
+                    else ("ogg" if "ogg" in output_type else "mp3")
                 ),
                 file_obj=mix_audio_file,
                 subtitle_files=output_format_subtitle,
@@ -1114,7 +1083,7 @@ class SoniTranslate(SoniTrCache):
         if burn_subtitles_to_video:
             hashvideo_text = [
                 hash_base_video_file,
-                [seg["text"] for seg in self.result_diarize["segments"]]
+                [seg["text"] for seg in self.result_diarize["segments"]],
             ]
             if self.burn_subs_id != hashvideo_text:
                 try:
@@ -1129,11 +1098,27 @@ class SoniTranslate(SoniTrCache):
             else:
                 base_video_file = vid_subs
 
-        if not self.task_in_cache("output", [
-            hash_base_video_file,
-            hash_base_audio_wav,
-            burn_subtitles_to_video
-        ], {}):
+        # spleeter_outdir = "./spleeter/"
+        # remove_directory_contents(spleeter_outdir)
+        # run_spleeter(base_audio_wav, spleeter_outdir)
+        # # vocals_spleeter = os.path.join(
+        # #     spleeter_outdir, os.path.splitext(base_audio_wav)[0], "vocals.wav"
+        # # )
+        # instrumental_spleeter = os.path.join(
+        #     spleeter_outdir,
+        #     os.path.splitext(base_audio_wav)[0],
+        #     "accompaniment.wav",
+        # )
+        # final_audio = "audio_final.mp3"
+        # run_command(
+        #     f'ffmpeg -y -i "{mix_audio_file}" -i "{instrumental_spleeter}" -filter_complex "[0:a][1:a]amerge=inputs=2[aout]" -map "[aout]" -c:a libmp3lame -q:a 4 "{final_audio}"'
+        # )
+
+        if not self.task_in_cache(
+            "output",
+            [hash_base_video_file, hash_base_audio_wav, burn_subtitles_to_video],
+            {},
+        ):
             # Merge new audio + video
             remove_files(video_output_file)
             run_command(
@@ -1172,10 +1157,12 @@ class SoniTranslate(SoniTrCache):
         end_page,
         bcolor,
         is_gui,
-        progress
+        progress,
     ):
         prog_disp("Processing pages...", 0.10, is_gui, progress=progress)
-        doc_data = doc_to_txtximg_pages(document,  width, height, start_page, end_page, bcolor)
+        doc_data = doc_to_txtximg_pages(
+            document, width, height, start_page, end_page, bcolor
+        )
         result_diarize = page_data_to_segments(doc_data, 1700)
 
         prog_disp("Translating...", 0.20, is_gui, progress=progress)
@@ -1186,9 +1173,7 @@ class SoniTranslate(SoniTrCache):
             chunk_size=0,
             source=ori_lang,
         )
-        chunk_size = (
-            chunk_size if chunk_size else determine_chunk_size(tts)
-        )
+        chunk_size = chunk_size if chunk_size else determine_chunk_size(tts)
         doc_data = update_page_data(result_diarize, doc_data)
 
         prog_disp("Text to speech...", 0.30, is_gui, progress=progress)
@@ -1202,10 +1187,10 @@ class SoniTranslate(SoniTrCache):
 
         # fix format and set folder output
         audio_files, speakers_list = accelerate_segments(
-                result_diarize,
-                1.0,
-                valid_speakers,
-            )
+            result_diarize,
+            1.0,
+            valid_speakers,
+        )
 
         # custom voice
         if custom_voices:
@@ -1229,15 +1214,10 @@ class SoniTranslate(SoniTrCache):
         remove_files(final_wav_file)
 
         prog_disp("Creating audio file...", 0.70, is_gui, progress=progress)
-        create_translated_audio(
-            result_diarize, audio_files, final_wav_file, False
-        )
+        create_translated_audio(result_diarize, audio_files, final_wav_file, False)
 
         prog_disp("Creating video file...", 0.80, is_gui, progress=progress)
-        video_doc = create_video_from_images(
-                doc_data,
-                result_diarize
-        )
+        video_doc = create_video_from_images(doc_data, result_diarize)
 
         # Merge video and audio
         prog_disp("Merging...", 0.90, is_gui, progress=progress)
@@ -1306,9 +1286,7 @@ class SoniTranslate(SoniTrCache):
 
         if "videobook" in output_type:
             if not document.lower().endswith(".pdf"):
-                raise ValueError(
-                    "Videobooks are only compatible with PDF files."
-                )
+                raise ValueError("Videobooks are only compatible with PDF files.")
 
             return self.hook_beta_processor(
                 document,
@@ -1327,7 +1305,7 @@ class SoniTranslate(SoniTrCache):
                 end_page,
                 bcolor,
                 is_gui,
-                progress
+                progress,
             )
 
         # audio_wav = "audio.wav"
@@ -1338,10 +1316,7 @@ class SoniTranslate(SoniTrCache):
             document, is_string, start_page, end_page
         )
 
-        if (
-            output_type == "book (txt)"
-            and translate_process == "disable_translation"
-        ):
+        if output_type == "book (txt)" and translate_process == "disable_translation":
             return result_file_path
 
         if "SET_LIMIT" == os.getenv("DEMO"):
@@ -1376,9 +1351,7 @@ class SoniTranslate(SoniTrCache):
                 )
 
         # (TTS limits) plain text to result_diarize
-        chunk_size = (
-            chunk_size if chunk_size else determine_chunk_size(tts_voice00)
-        )
+        chunk_size = chunk_size if chunk_size else determine_chunk_size(tts_voice00)
         result_diarize = plain_text_to_segments(result_text, chunk_size)
         logger.debug(result_diarize)
 
@@ -1392,10 +1365,10 @@ class SoniTranslate(SoniTrCache):
 
         # fix format and set folder output
         audio_files, speakers_list = accelerate_segments(
-                result_diarize,
-                1.0,
-                valid_speakers,
-            )
+            result_diarize,
+            1.0,
+            valid_speakers,
+        )
 
         # custom voice
         if custom_voices:
@@ -1413,20 +1386,18 @@ class SoniTranslate(SoniTrCache):
             )
             self.vci.unload_models()
 
-        prog_disp(
-            "Creating final audio file...", 0.90, is_gui, progress=progress
-        )
+        prog_disp("Creating final audio file...", 0.90, is_gui, progress=progress)
         remove_files(final_wav_file)
-        create_translated_audio(
-            result_diarize, audio_files, final_wav_file, True
-        )
+        create_translated_audio(result_diarize, audio_files, final_wav_file, True)
 
         output = media_out(
             result_file_path if is_string else document,
             TRANSLATE_AUDIO_TO,
             name_final_file,
-            "mp3" if "mp3" in output_type else (
-                "ogg" if "ogg" in output_type else "wav"
+            (
+                "mp3"
+                if "mp3" in output_type
+                else ("ogg" if "ogg" in output_type else "wav")
             ),
             file_obj=final_wav_file,
         )
@@ -1721,25 +1692,21 @@ def create_gui(theme, logs_in_gui=False):
                                 wav_speaker_dereverb = gr.Checkbox(
                                     True,
                                     label=lg_conf["xtts_dereverb_label"],
-                                    info=lg_conf["xtts_dereverb_info"]
+                                    info=lg_conf["xtts_dereverb_info"],
                                 )
                                 wav_speaker_output = gr.HTML()
-                                create_xtts_wav = gr.Button(
-                                    lg_conf["xtts_button"]
-                                )
+                                create_xtts_wav = gr.Button(lg_conf["xtts_button"])
                                 gr.Markdown(lg_conf["xtts_footer"])
                     else:
                         wav_speaker_dereverb = gr.Checkbox(
                             False,
                             label=lg_conf["xtts_dereverb_label"],
                             info=lg_conf["xtts_dereverb_info"],
-                            visible=False
+                            visible=False,
                         )
 
                     with gr.Column():
-                        with gr.Accordion(
-                            lg_conf["extra_setting"], open=False
-                        ):
+                        with gr.Accordion(lg_conf["extra_setting"], open=False):
                             audio_accelerate = gr.Slider(
                                 label=lg_conf["acc_max_label"],
                                 value=1.9,
@@ -1845,9 +1812,7 @@ def create_gui(theme, logs_in_gui=False):
                                 maximum=30,
                             )
                             whisper_model_default = (
-                                "large-v3"
-                                if SoniTr.device == "cuda"
-                                else "medium"
+                                "large-v3" if SoniTr.device == "cuda" else "medium"
                             )
 
                             WHISPER_MODEL_SIZE = gr.Dropdown(
@@ -1891,7 +1856,7 @@ def create_gui(theme, logs_in_gui=False):
                             text_segmentation_options = [
                                 "sentence",
                                 "word",
-                                "character"
+                                "character",
                             ]
                             text_segmentation_scale_gui = gr.Dropdown(
                                 text_segmentation_options,
@@ -1906,9 +1871,7 @@ def create_gui(theme, logs_in_gui=False):
                             )
 
                             gr.HTML("<hr></h2>")
-                            pyannote_models_list = list(
-                                diarization_models.keys()
-                            )
+                            pyannote_models_list = list(diarization_models.keys())
                             diarization_process_dropdown = gr.Dropdown(
                                 pyannote_models_list,
                                 value=pyannote_models_list[1],
@@ -1944,9 +1907,7 @@ def create_gui(theme, logs_in_gui=False):
                             PREVIEW = gr.Checkbox(
                                 label="Preview", info=lg_conf["preview_info"]
                             )
-                            is_gui_dummy_check = gr.Checkbox(
-                                True, visible=False
-                            )
+                            is_gui_dummy_check = gr.Checkbox(True, visible=False)
 
                 with gr.Column(variant="compact"):
                     edit_sub_check = gr.Checkbox(
@@ -1960,13 +1921,9 @@ def create_gui(theme, logs_in_gui=False):
 
                     def visible_component_subs(input_bool):
                         if input_bool:
-                            return gr.update(visible=True), gr.update(
-                                visible=True
-                            )
+                            return gr.update(visible=True), gr.update(visible=True)
                         else:
-                            return gr.update(visible=False), gr.update(
-                                visible=False
-                            )
+                            return gr.update(visible=False), gr.update(visible=False)
 
                     subs_button = gr.Button(
                         lg_conf["button_subs"],
@@ -1996,7 +1953,6 @@ def create_gui(theme, logs_in_gui=False):
                             label=lg_conf["output_result_label"],
                             file_count="multiple",
                             interactive=False,
-
                         )  # gr.Video()
 
                     gr.HTML("<hr></h2>")
@@ -2103,9 +2059,7 @@ def create_gui(theme, logs_in_gui=False):
                                 lines=5,
                                 visible=False,
                             )
-                            input_docs = gr.File(
-                                label="Document", visible=True
-                            )
+                            input_docs = gr.File(label="Document", visible=True)
                             directory_input_docs = gr.Textbox(
                                 visible=False,
                                 label="Document Path",
@@ -2153,14 +2107,10 @@ def create_gui(theme, logs_in_gui=False):
                             )
 
                             with gr.Column():
-                                with gr.Accordion(
-                                    lg_conf["extra_setting"], open=False
-                                ):
+                                with gr.Accordion(lg_conf["extra_setting"], open=False):
                                     docs_translate_process_dropdown = gr.Dropdown(
                                         DOCS_TRANSLATION_PROCESS_OPTIONS,
-                                        value=DOCS_TRANSLATION_PROCESS_OPTIONS[
-                                            0
-                                        ],
+                                        value=DOCS_TRANSLATION_PROCESS_OPTIONS[0],
                                         label="Translation process",
                                     )
 
@@ -2218,9 +2168,7 @@ def create_gui(theme, logs_in_gui=False):
                                         value=BORDER_COLORS[0],
                                         label="Border color",
                                     )
-                                    docs_dummy_check = gr.Checkbox(
-                                        True, visible=False
-                                    )
+                                    docs_dummy_check = gr.Checkbox(True, visible=False)
 
                             with gr.Row():
                                 docs_button = gr.Button(
@@ -2251,16 +2199,12 @@ def create_gui(theme, logs_in_gui=False):
                         models_path, index_path = upload_model_list()
 
                         dict_models = {
-                            f"fmodel{i:02d}": gr.update(
-                                choices=models_path
-                            )
-                            for i in range(MAX_TTS+1)
+                            f"fmodel{i:02d}": gr.update(choices=models_path)
+                            for i in range(MAX_TTS + 1)
                         }
                         dict_index = {
-                            f"findex{i:02d}": gr.update(
-                                choices=index_path, value=None
-                            )
-                            for i in range(MAX_TTS+1)
+                            f"findex{i:02d}": gr.update(choices=index_path, value=None)
+                            for i in range(MAX_TTS + 1)
                         }
                         dict_changes = {**dict_models, **dict_index}
                         return [value for value in dict_changes.values()]
@@ -2271,9 +2215,7 @@ def create_gui(theme, logs_in_gui=False):
                         with gr.Column():
                             gr.Markdown(lg_conf["sec1_title"])
                             enable_custom_voice = gr.Checkbox(
-                                False,
-                                label="ENABLE",
-                                info=lg_conf["enable_replace"]
+                                False, label="ENABLE", info=lg_conf["enable_replace"]
                             )
                             workers_custom_voice = gr.Number(
                                 step=1,
@@ -2371,12 +2313,13 @@ def create_gui(theme, logs_in_gui=False):
 
                             def button_conf(tts_name):
                                 return gr.Button(
-                                    lg_conf["cv_button_apply"]+" "+tts_name,
+                                    lg_conf["cv_button_apply"] + " " + tts_name,
                                     variant="primary",
                                 )
 
                             TTS_TABS = [
-                                'TTS Speaker {:02d}'.format(i) for i in range(1, MAX_TTS+1)
+                                "TTS Speaker {:02d}".format(i)
+                                for i in range(1, MAX_TTS + 1)
                             ]
 
                             CV_SUBTITLES = [
@@ -2413,9 +2356,7 @@ def create_gui(theme, logs_in_gui=False):
                                         cbp_gui = consonant_protec_conf()
 
                                         with gr.Row(variant="compact"):
-                                            button_config = button_conf(
-                                                TTS_TABS[i]
-                                            )
+                                            button_config = button_conf(TTS_TABS[i])
 
                                             confirm_conf = gr.HTML()
 
@@ -2435,11 +2376,13 @@ def create_gui(theme, logs_in_gui=False):
                                             outputs=[confirm_conf],
                                         )
 
-                                        configs_storage.append({
-                                            "tag": tag_gui,
-                                            "model": model_gui,
-                                            "index": index_gui,
-                                        })
+                                        configs_storage.append(
+                                            {
+                                                "tag": tag_gui,
+                                                "model": model_gui,
+                                                "index": index_gui,
+                                            }
+                                        )
 
                 with gr.Column():
                     with gr.Accordion("Test R.V.C.", open=False):
@@ -2485,18 +2428,14 @@ def create_gui(theme, logs_in_gui=False):
                             )
 
                     download_button.click(
-                        download_list,
-                        [url_links],
-                        [download_finish],
-                        queue=False
+                        download_list, [url_links], [download_finish], queue=False
                     ).then(
                         update_models,
                         [],
-                        [
-                            elem["model"] for elem in configs_storage
-                        ] + [model_test] + [
-                            elem["index"] for elem in configs_storage
-                        ] + [index_test],
+                        [elem["model"] for elem in configs_storage]
+                        + [model_test]
+                        + [elem["index"] for elem in configs_storage]
+                        + [index_test],
                     )
 
         with gr.Tab(lg_conf["tab_help"]):
@@ -2668,9 +2607,7 @@ def create_gui(theme, logs_in_gui=False):
                 is_gui_dummy_check,
             ],
             outputs=subs_edit_space,
-        ).then(
-            play_sound_alert, [play_sound_gui], [sound_alert_notification]
-        )
+        ).then(play_sound_alert, [play_sound_gui], [sound_alert_notification])
 
         # Run translate tts and complete
         video_button.click(
@@ -2737,9 +2674,7 @@ def create_gui(theme, logs_in_gui=False):
             ],
             outputs=video_output,
             trigger_mode="multiple",
-        ).then(
-            play_sound_alert, [play_sound_gui], [sound_alert_notification]
-        )
+        ).then(play_sound_alert, [play_sound_gui], [sound_alert_notification])
 
         # Run docs process
         docs_button.click(
@@ -2766,9 +2701,7 @@ def create_gui(theme, logs_in_gui=False):
             ],
             outputs=docs_output,
             trigger_mode="multiple",
-        ).then(
-            play_sound_alert, [play_sound_gui], [sound_alert_notification]
-        )
+        ).then(play_sound_alert, [play_sound_gui], [sound_alert_notification])
 
     return app
 
@@ -2777,9 +2710,7 @@ def get_language_config(language_data, language=None, base_key="english"):
     base_lang = language_data.get(base_key)
 
     if language not in language_data:
-        logger.error(
-            f"Language {language} not found, defaulting to {base_key}"
-        )
+        logger.error(f"Language {language} not found, defaulting to {base_key}")
         return base_lang
 
     lg_conf = language_data.get(language, {})
@@ -2819,8 +2750,7 @@ def create_parser():
         type=str,
         default="info",
         help=(
-            "Set logger verbosity level: "
-            "debug, info, warning, error, or critical"
+            "Set logger verbosity level: " "debug, info, warning, error, or critical"
         ),
     )
     parser.add_argument(
@@ -2850,9 +2780,7 @@ if __name__ == "__main__":
     set_logging_level(args.verbosity_level)
 
     for id_model in UVR_MODELS:
-        download_manager(
-            os.path.join(MDX_DOWNLOAD_LINK, id_model), mdxnet_models_dir
-        )
+        download_manager(os.path.join(MDX_DOWNLOAD_LINK, id_model), mdxnet_models_dir)
 
     models_path, index_path = upload_model_list()
 

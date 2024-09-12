@@ -62,9 +62,9 @@ class MDXModel:
 
         self.n_bins = self.n_fft // 2 + 1
         self.chunk_size = hop * (self.dim_t - 1)
-        self.window = torch.hann_window(
-            window_length=self.n_fft, periodic=True
-        ).to(device)
+        self.window = torch.hann_window(window_length=self.n_fft, periodic=True).to(
+            device
+        )
 
         out_c = self.dim_c
 
@@ -119,33 +119,30 @@ class MDX:
     DEFAULT_CHUNK_SIZE = 0 * DEFAULT_SR
     DEFAULT_MARGIN_SIZE = 1 * DEFAULT_SR
 
-    def __init__(
-        self, model_path: str, params: MDXModel, processor=0
-    ):
+    def __init__(self, model_path: str, params: MDXModel, processor=0):
         # Set the device and the provider (CPU or CUDA)
         self.device = (
-            torch.device(f"cuda:{processor}")
-            if processor >= 0
-            else torch.device("cpu")
+            torch.device(f"cuda:{processor}") if processor >= 0 else torch.device("cpu")
         )
         self.provider = (
-            ["CUDAExecutionProvider"]
-            if processor >= 0
-            else ["CPUExecutionProvider"]
+            ["CUDAExecutionProvider"] if processor >= 0 else ["CPUExecutionProvider"]
         )
 
         self.model = params
 
         # Load the ONNX model using ONNX Runtime
         self.ort = ort.InferenceSession(model_path, providers=self.provider)
+
+        # Log the actual providers being used
+        actual_providers = self.ort.get_providers()
+        logger.debug(f"Actual ONNX Runtime providers: {actual_providers}")
+
         # Preload the model for faster performance
         self.ort.run(
             None,
             {"input": torch.rand(1, 4, params.dim_f, params.dim_t).numpy()},
         )
-        self.process = lambda spec: self.ort.run(
-            None, {"input": spec.cpu().numpy()}
-        )[0]
+        self.process = lambda spec: self.ort.run(None, {"input": spec.cpu().numpy()})[0]
 
         self.prog = None
 
@@ -155,7 +152,7 @@ class MDX:
             with open(model_path, "rb") as f:
                 f.seek(-10000 * 1024, 2)
                 model_hash = hashlib.md5(f.read()).hexdigest()
-        except: # noqa
+        except:  # noqa
             model_hash = hashlib.md5(open(model_path, "rb").read()).hexdigest()
 
         return model_hash
@@ -189,9 +186,9 @@ class MDX:
                 end = None if segment_count == len(wave) - 1 else -margin_size
                 if margin_size == 0:
                     end = None
-                if processed_wave is None:  # Create array for first segment
+                if processed_wave is None:
                     processed_wave = segment[:, start:end]
-                else:  # Concatenate to existing array for subsequent segments
+                else:
                     processed_wave = np.concatenate(
                         (processed_wave, segment[:, start:end]), axis=-1
                     )
@@ -206,9 +203,7 @@ class MDX:
             if margin_size > chunk_size:
                 margin_size = chunk_size
 
-            for segment_count, skip in enumerate(
-                range(0, sample_count, chunk_size)
-            ):
+            for segment_count, skip in enumerate(range(0, sample_count, chunk_size)):
                 margin = 0 if segment_count == 0 else margin_size
                 end = min(skip + chunk_size + margin_size, sample_count)
                 start = skip - margin
@@ -252,13 +247,9 @@ class MDX:
 
         mix_waves = []
         for i in range(0, n_sample + pad, gen_size):
-            waves = np.array(wave_p[:, i:i + self.model.chunk_size])
+            waves = np.array(wave_p[:, i : i + self.model.chunk_size])
             mix_waves.append(waves)
-
-        mix_waves = torch.tensor(mix_waves, dtype=torch.float32).to(
-            self.device
-        )
-
+        mix_waves = torch.tensor(mix_waves, dtype=torch.float32).to(self.device)
         return mix_waves, pad, trim
 
     def _process_wave(self, mix_waves, trim, pad, q: queue.Queue, _id: int):
@@ -282,9 +273,7 @@ class MDX:
                 self.prog.update()
                 spec = self.model.stft(mix_wave)
                 processed_spec = torch.tensor(self.process(spec))
-                processed_wav = self.model.istft(
-                    processed_spec.to(self.device)
-                )
+                processed_wav = self.model.istft(processed_spec.to(self.device))
                 processed_wav = (
                     processed_wav[:, :, trim:-trim]
                     .transpose(0, 1)
@@ -332,9 +321,7 @@ class MDX:
             processed_batches.append(q.get())
         processed_batches = [
             list(wave.values())[0]
-            for wave in sorted(
-                processed_batches, key=lambda d: list(d.keys())[0]
-            )
+            for wave in sorted(processed_batches, key=lambda d: list(d.keys())[0])
         ]
         assert len(processed_batches) == len(
             waves
@@ -405,13 +392,9 @@ def run_mdx(
     invert_filepath = None
     if not exclude_inversion:
         diff_stem_name = (
-            stem_naming.get(stem_name)
-            if invert_suffix is None
-            else invert_suffix
+            stem_naming.get(stem_name) if invert_suffix is None else invert_suffix
         )
-        stem_name = (
-            f"{stem_name}_diff" if diff_stem_name is None else diff_stem_name
-        )
+        stem_name = f"{stem_name}_diff" if diff_stem_name is None else diff_stem_name
         invert_filepath = os.path.join(
             output_dir,
             f"{os.path.basename(os.path.splitext(filename)[0])}_{stem_name}.wav",
@@ -431,14 +414,16 @@ def run_mdx(
     return main_filepath, invert_filepath
 
 
-MDX_DOWNLOAD_LINK = "https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/"
+MDX_DOWNLOAD_LINK = (
+    "https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/"
+)
 UVR_MODELS = [
     "UVR-MDX-NET-Voc_FT.onnx",
     "UVR_MDXNET_KARA_2.onnx",
     "Reverb_HQ_By_FoxJoy.onnx",
     "UVR-MDX-NET-Inst_HQ_4.onnx",
 ]
-BASE_DIR = "."  # os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = "."
 mdxnet_models_dir = os.path.join(BASE_DIR, "mdx_models")
 output_dir = os.path.join(BASE_DIR, "clean_song_output")
 
@@ -446,8 +431,7 @@ output_dir = os.path.join(BASE_DIR, "clean_song_output")
 def convert_to_stereo_and_wav(audio_path):
     wave, sr = librosa.load(audio_path, mono=False, sr=44100)
 
-    # check if mono
-    if type(wave[0]) != np.ndarray or audio_path[-4:].lower() != ".wav": # noqa
+    if type(wave[0]) != np.ndarray or audio_path[-4:].lower() != ".wav":  # noqa
         stereo_path = f"{os.path.splitext(audio_path)[0]}_stereo.wav"
         stereo_path = os.path.join(output_dir, stereo_path)
 
@@ -457,9 +441,9 @@ def convert_to_stereo_and_wav(audio_path):
         sub_params = {
             "stdout": subprocess.PIPE,
             "stderr": subprocess.PIPE,
-            "creationflags": subprocess.CREATE_NO_WINDOW
-            if sys.platform == "win32"
-            else 0,
+            "creationflags": (
+                subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            ),
         }
         process_wav = subprocess.Popen(command, **sub_params)
         output, errors = process_wav.communicate()
@@ -475,14 +459,24 @@ def process_uvr_task(
     orig_song_path: str = "aud_test.mp3",
     main_vocals: bool = False,
     dereverb: bool = True,
-    song_id: str = "mdx",  # folder output name
+    song_id: str = "mdx",
     only_voiceless: bool = False,
     remove_files_output_dir: bool = False,
 ):
+    # Ensure environment variable is set to use CPU
     if os.environ.get("SONITR_DEVICE") == "cpu":
+        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+        os.environ["ORT_CUDA_DEVICE_ID"] = "-1"
+        torch.cuda.is_available = (
+            lambda: False
+        )  # Force torch to consider CUDA unavailable
         device_base = "cpu"
     else:
         device_base = "cuda" if torch.cuda.is_available() else "cpu"
+
+    logger.debug(
+        f"Environment settings - CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES')}, ORT_CUDA_DEVICE_ID: {os.environ.get('ORT_CUDA_DEVICE_ID')}, torch.cuda.is_available(): {torch.cuda.is_available()}"
+    )
 
     if remove_files_output_dir:
         remove_directory_contents(output_dir)
@@ -564,9 +558,7 @@ if __name__ == "__main__":
     from utils import download_manager
 
     for id_model in UVR_MODELS:
-        download_manager(
-            os.path.join(MDX_DOWNLOAD_LINK, id_model), mdxnet_models_dir
-        )
+        download_manager(os.path.join(MDX_DOWNLOAD_LINK, id_model), mdxnet_models_dir)
     (
         vocals_path_,
         instrumentals_path_,
