@@ -100,6 +100,7 @@ import argparse
 import time
 import hashlib
 import sys
+from soni_translate.spleeter import run_spleeter
 
 directories = [
     "downloads",
@@ -1098,21 +1099,21 @@ class SoniTranslate(SoniTrCache):
             else:
                 base_video_file = vid_subs
 
-        # spleeter_outdir = "./spleeter/"
-        # remove_directory_contents(spleeter_outdir)
-        # run_spleeter(base_audio_wav, spleeter_outdir)
-        # # vocals_spleeter = os.path.join(
-        # #     spleeter_outdir, os.path.splitext(base_audio_wav)[0], "vocals.wav"
-        # # )
-        # instrumental_spleeter = os.path.join(
-        #     spleeter_outdir,
-        #     os.path.splitext(base_audio_wav)[0],
-        #     "accompaniment.wav",
+        spleeter_outdir = "./spleeter/"
+        remove_directory_contents(spleeter_outdir)
+        run_spleeter(base_audio_wav, spleeter_outdir)
+        # vocals_spleeter = os.path.join(
+        #     spleeter_outdir, os.path.splitext(base_audio_wav)[0], "vocals.wav"
         # )
-        # final_audio = "audio_final.mp3"
-        # run_command(
-        #     f'ffmpeg -y -i "{mix_audio_file}" -i "{instrumental_spleeter}" -filter_complex "[0:a][1:a]amerge=inputs=2[aout]" -map "[aout]" -c:a libmp3lame -q:a 4 "{final_audio}"'
-        # )
+        instrumental_spleeter = os.path.join(
+            spleeter_outdir,
+            os.path.splitext(base_audio_wav)[0],
+            "accompaniment.wav",
+        )
+        final_audio = "audio_final.mp3"
+        run_command(
+            f'ffmpeg -y -i "{mix_audio_file}" -i "{instrumental_spleeter}" -filter_complex "[0:a][1:a]amerge=inputs=2[aout]" -map "[aout]" -c:a libmp3lame -q:a 4 "{final_audio}"'
+        )
 
         if not self.task_in_cache(
             "output",
@@ -1122,7 +1123,7 @@ class SoniTranslate(SoniTrCache):
             # Merge new audio + video
             remove_files(video_output_file)
             run_command(
-                f"ffmpeg -i {base_video_file} -i {mix_audio_file} -c:v copy -c:a copy -map 0:v -map 1:a -shortest {video_output_file}"
+                f"ffmpeg -i {base_video_file} -i {final_audio} -c:v copy -c:a copy -map 0:v -map 1:a -shortest {video_output_file}"
             )
 
         output = media_out(
